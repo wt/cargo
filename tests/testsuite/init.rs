@@ -290,7 +290,7 @@ and set the binary name to be different from the package. \
 This can be done by setting the binary filename to `src/bin/foo.bar.rs` \
 or change the name in Cargo.toml with:
 
-    [bin]
+    [[bin]]
     name = \"foo.bar\"
     path = \"src/main.rs\"
 
@@ -317,7 +317,7 @@ and set the binary name to be different from the package. \
 This can be done by setting the binary filename to `src/bin/test.rs` \
 or change the name in Cargo.toml with:
 
-    [bin]
+    [[bin]]
     name = \"test\"
     path = \"src/main.rs\"
 
@@ -572,7 +572,8 @@ fn formats_source() {
 mod tests {
   #[test]
   fn it_works() {
-    assert_eq!(2 + 2, 4);
+    let result = 2 + 2;
+    assert_eq!(result, 4);
   }
 }
 "#
@@ -592,9 +593,81 @@ fn ignores_failure_to_format_source() {
 mod tests {
     #[test]
     fn it_works() {
-        assert_eq!(2 + 2, 4);
+        let result = 2 + 2;
+        assert_eq!(result, 4);
     }
 }
 "#
     );
+}
+
+#[cargo_test]
+fn creates_binary_when_instructed_and_has_lib_file_no_warning() {
+    let path = paths::root().join("foo");
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("foo.rs"), "fn not_main() {}").unwrap();
+    cargo_process("init --bin")
+        .cwd(&path)
+        .with_stderr(
+            "\
+[WARNING] file `foo.rs` seems to be a library file
+[CREATED] binary (application) package
+",
+        )
+        .run();
+
+    let cargo_toml = fs::read_to_string(path.join("Cargo.toml")).unwrap();
+    assert!(cargo_toml.contains("[[bin]]"));
+    assert!(!cargo_toml.contains("[lib]"));
+}
+
+#[cargo_test]
+fn creates_library_when_instructed_and_has_bin_file() {
+    let path = paths::root().join("foo");
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("foo.rs"), "fn main() {}").unwrap();
+    cargo_process("init --lib")
+        .cwd(&path)
+        .with_stderr(
+            "\
+[WARNING] file `foo.rs` seems to be a binary (application) file
+[CREATED] library package
+",
+        )
+        .run();
+
+    let cargo_toml = fs::read_to_string(path.join("Cargo.toml")).unwrap();
+    assert!(!cargo_toml.contains("[[bin]]"));
+    assert!(cargo_toml.contains("[lib]"));
+}
+
+#[cargo_test]
+fn creates_binary_when_both_binlib_present() {
+    let path = paths::root().join("foo");
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("foo.rs"), "fn main() {}").unwrap();
+    fs::write(path.join("lib.rs"), "fn notmain() {}").unwrap();
+    cargo_process("init --bin")
+        .cwd(&path)
+        .with_stderr("[CREATED] binary (application) package")
+        .run();
+
+    let cargo_toml = fs::read_to_string(path.join("Cargo.toml")).unwrap();
+    assert!(cargo_toml.contains("[[bin]]"));
+    assert!(cargo_toml.contains("[lib]"));
+}
+
+#[cargo_test]
+fn cant_create_library_when_both_binlib_present() {
+    let path = paths::root().join("foo");
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("foo.rs"), "fn main() {}").unwrap();
+    fs::write(path.join("lib.rs"), "fn notmain() {}").unwrap();
+    cargo_process("init --lib")
+        .cwd(&path)
+        .with_status(101)
+        .with_stderr(
+            "[ERROR] cannot have a package with multiple libraries, found both `foo.rs` and `lib.rs`"
+            )
+        .run();
 }
